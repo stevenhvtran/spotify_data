@@ -57,21 +57,74 @@ def get_user(access_token):
     response = requests.get('https://api.spotify.com/v1/me',
                             headers=header)
     user_data = response.json()
-    user = User(user_data)
+    user = User(user_data, access_token)
     return user
 
 
 class User:
-    def __init__(self, user_data):
+    def __init__(self, user_data, access_token):
+        self.access_token = access_token
         self.user_data = user_data
         self.get_user_playlists()
 
     def __getattr__(self, item):
         return self.user_data[item]
 
+    def __repr__(self):
+        return self.user_data['display_name']
+
     def get_user_playlists(self):
-        user_id = self['id']
-        print(user_id)
+        user_id = self.user_data['id']
+        access_token = self.access_token
+        playlist_url = f'https://api.spotify.com/v1/users/{user_id}/playlists'
+        path_param = {'user_id': user_id}
+        header = {'Authorization': f'Bearer {self.access_token}'}
+        playlist_data = requests.get(playlist_url,
+                                     params=path_param,
+                                     headers=header).json()
+        items = playlist_data['items']
+        playlists = [Playlist(user_id, access_token, item) for item in items]
+        self.user_data.update({'playlists': playlists})
+
+
+class Playlist:
+    def __init__(self, user_id, access_token, playlist_data):
+        self.user_id = user_id
+        self.access_token = access_token
+        self.playlist_data = playlist_data
+        self.get_playlist_tracks()
+
+    def __getattr__(self, item):
+        return self.playlist_data[item]
+
+    def __repr__(self):
+        return self.playlist_data['name']
+
+    def get_playlist_tracks(self):
+        user_id = self.user_id
+        access_token = self.access_token
+        playlist_id = self.playlist_data['id']
+        query_param = {'fields': 'items(added_at, track)'}
+        tracks_url = f'https://api.spotify.com/v1/users/{user_id}/playlists/{playlist_id}/tracks'
+        header = {'Authorization': f'Bearer {self.access_token}'}
+        tracks_data = requests.get(tracks_url,
+                                   headers=header,
+                                   params=query_param).json()
+        track_items = tracks_data['items']
+        tracks = [Track(access_token, item) for item in track_items]
+        self.playlist_data.update({'tracks': tracks})
+
+
+class Track:
+    def __init__(self, access_token, track_data):
+        self.access_token = access_token
+        self.track_data = track_data
+
+    def __getattr__(self, item):
+        return self.track_data[item]
+
+    def __repr__(self):
+        return self.track_data['track']['name']
 
 
 def main():
@@ -85,7 +138,7 @@ def main():
     callback_url = get_callback_url(client_id, redirect_uri, scopes)
 
     # Get the access code from the URL
-    input_message = f'Please visit {callback_url} and paste the url here: '
+    input_message = f'Go to {callback_url} and paste the url here: \n'
     access_code_url = input(input_message)
     access_code = parse_access_code_url(access_code_url)
 
