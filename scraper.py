@@ -1,9 +1,9 @@
 """
-A scraper for my Spotify account - extracts playlist data into SQL form
+A scraper for my Spotify account - extracts playlist data into a pandas df
 """
 from urllib.parse import urlencode
-import psycopg2
 import requests
+import pandas as pd
 
 
 def get_callback_url(client_id, redirect_uri, scopes=''):
@@ -16,7 +16,7 @@ def get_callback_url(client_id, redirect_uri, scopes=''):
         'client_id': client_id,
         'response_type': 'code',
         'redirect_uri': redirect_uri,
-        'scopes': scopes
+        'scope': scopes
         }
     encoded_params = urlencode(query_params)
     encoded_url = base_url + encoded_params
@@ -83,7 +83,10 @@ class User:
                                      params=path_param,
                                      headers=header).json()
         items = playlist_data['items']
-        playlists = [Playlist(user_id, access_token, item) for item in items]
+        playlists = []
+        for playlist in items:
+            if playlist['owner']['id'] == self.id:
+                playlists.append(Playlist(user_id, access_token, playlist))
         self.user_data.update({'playlists': playlists})
 
 
@@ -118,36 +121,59 @@ class Playlist:
 class Track:
     def __init__(self, access_token, track_data):
         self.access_token = access_token
-        self.track_data = track_data
+        self.track_data = track_data['track']
+        self.track_data.update({'added_at': track_data['added_at']})
 
     def __getattr__(self, item):
         return self.track_data[item]
 
     def __repr__(self):
-        return self.track_data['track']['name']
+        return self.track_data['name']
 
 
-def main():
-    """Executes the main code for scraping"""
-    redirect_uri = 'http://localhost:3000/callback'
-    client_id = input('What is your client ID? ')
-    client_secret = input('What is your client secret? ')
+redirect_uri = 'http://localhost:3000/callback'
+client_id = input('What is your client ID? ')
+client_secret = input('What is your client secret? ')
 
-    # Get the user's callback URL for further authentication
-    scopes = 'user-library-read,playlist-read-private,user-top-read'
-    callback_url = get_callback_url(client_id, redirect_uri, scopes)
+# Get the user's callback URL for further authentication
+scopes = 'user-library-read playlist-read-private user-top-read'
+callback_url = get_callback_url(client_id, redirect_uri, scopes)
 
-    # Get the access code from the URL
-    input_message = f'Go to {callback_url} and paste the url here: \n'
-    access_code_url = input(input_message)
-    access_code = parse_access_code_url(access_code_url)
+# Get the access code from the URL
+input_message = f'Go to {callback_url} and paste the url here: \n'
+access_code_url = input(input_message)
+access_code = parse_access_code_url(access_code_url)
 
-    # Get the user's access token for further API usage
-    access_token = get_access_token(access_code, redirect_uri, client_id,
-                                    client_secret)
+# Get the user's access token for further API usage
+access_token = get_access_token(access_code, redirect_uri, client_id,
+                                client_secret)
 
-    user = get_user(access_token)
+user = get_user(access_token)
 
+columns = ['track_name', 'playlist_name', 'album_name', 'artist_name',
+           'added_at', 'duration_ms', 'explicit', 'popularity', 'track_id',
+           'playlist_id', 'album_id', 'artist_id']
 
-if __name__ == '__main__':
-    main()
+my_data = pd.DataFrame(columns=columns)
+
+for playlist in user.playlists:
+    for track in playlist.tracks:
+        for artist in track.artists:
+            df = pd.DataFrame([[
+                track.name,
+                playlist.name,
+                track.album['name'],
+                artist['name'],
+                track.added_at,
+                track.duration_ms,
+                track.explicit,
+                track.popularity,
+                track.id,
+                playlist.id,
+                track.album['id'],
+                artist['id']
+            ]],
+                columns=columns)
+            my_data = my_data.append(df, ignore_index=True)
+
+my_data.to_csv('./data.csv')
