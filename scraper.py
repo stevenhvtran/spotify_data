@@ -154,8 +154,10 @@ columns = ['track_name', 'playlist_name', 'album_name', 'artist_name',
            'added_at', 'duration_ms', 'explicit', 'popularity', 'track_id',
            'playlist_id', 'album_id', 'artist_id']
 
+# Initialise data frame
 my_data = pd.DataFrame(columns=columns)
 
+# Populate the data frame
 for playlist in user.playlists:
     for track in playlist.tracks:
         for artist in track.artists:
@@ -176,4 +178,5 @@ for playlist in user.playlists:
                 columns=columns)
             my_data = my_data.append(df, ignore_index=True)
 
+# Write data frame to a CSV file for analysis
 my_data.to_csv('./data.csv')
